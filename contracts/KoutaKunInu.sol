@@ -17,6 +17,7 @@ contract KoutaKunInu is ERC20, Ownable {
     address public immutable uniswapV2Pair;
 
     address public immutable bounceFixedSaleWallet;
+    address public marketingWallet;
 
     bool private swapping;
 
@@ -29,6 +30,7 @@ contract KoutaKunInu is ERC20, Ownable {
 
     uint256 public immutable BNBRewardsFee;
     uint256 public immutable liquidityFee;
+    uint256 public immutable marketingFee;
     uint256 public immutable totalFees;
 
     // sells have fees of 12 and 6 (10 * 1.2 and 5 * 1.2)
@@ -40,8 +42,8 @@ contract KoutaKunInu is ERC20, Ownable {
 
     /*   Fixed Sale   */
 
-    // timestamp for when purchases on the fixed-sale are available to early participants
-    uint256 public immutable fixedSaleStartTimestamp = 1623960000; //June 17, 20:00 UTC, 2021
+    // timefstamp for when purchases on the fixed-sale are available to early participants
+    uint256 public immutable fixedSaleStartTimestamp = 1662056999; //June 17, 20:00 UTC, 2021
 
     // the fixed-sale will be open to the public 10 minutes after fixedSaleStartTimestamp,
     // or after 600 buys, whichever comes first.
@@ -56,10 +58,8 @@ contract KoutaKunInu is ERC20, Ownable {
 
     /******************/
 
-
-
     // timestamp for when the token can be traded freely on PanackeSwap
-    uint256 public immutable tradingEnabledTimestamp = 1623967200; //June 17, 22:00 UTC, 2021
+    uint256 public immutable tradingEnabledTimestamp = 1662056999; //June 17, 22:00 UTC, 2021
 
     // exlcude from fees and max transaction amount
     mapping (address => bool) private _isExcludedFromFees;
@@ -84,7 +84,7 @@ contract KoutaKunInu is ERC20, Ownable {
 
     event SetAutomatedMarketMakerPair(address indexed pair, bool indexed value);
 
-    event LiquidityWalletUpdated(address indexed newLiquidityWallet, address indexed oldLiquidityWallet);
+    event MarketingWalletUpdated(address indexed newLiquidityWallet, address indexed oldLiquidityWallet);
 
     event GasForProcessingUpdated(uint256 indexed newValue, uint256 indexed oldValue);
 
@@ -110,13 +110,15 @@ contract KoutaKunInu is ERC20, Ownable {
     	address indexed processor
     );
 
-    constructor() ERC20("KKI", "KKI") {
-        uint256 _BNBRewardsFee = 10;
-        uint256 _liquidityFee = 5;
+    constructor() ERC20("KKI", "KoutaKunInu") {
+        uint256 _BNBRewardsFee = 8;
+        uint256 _marketingFee = 4;
+        uint256 _liquidityFee = 3;
 
         BNBRewardsFee = _BNBRewardsFee;
+        marketingFee = _marketingFee;
         liquidityFee = _liquidityFee;
-        totalFees = _BNBRewardsFee.add(_liquidityFee);
+        totalFees = _BNBRewardsFee.add(_liquidityFee).add(_marketingFee);
 
 
     	dividendTracker = new KKIDividendTracker();
@@ -124,7 +126,7 @@ contract KoutaKunInu is ERC20, Ownable {
     	liquidityWallet = owner();
 
     	
-    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
          // Create a uniswap pair for this new token
         address _uniswapV2Pair = IUniswapV2Factory(_uniswapV2Router.factory())
             .createPair(address(this), _uniswapV2Router.WETH());
@@ -134,8 +136,9 @@ contract KoutaKunInu is ERC20, Ownable {
 
         _setAutomatedMarketMakerPair(_uniswapV2Pair, true);
 
-        address _bounceFixedSaleWallet = 0x4Fc4bFeDc5c82644514fACF716C7F888a0C73cCc;
+        address _bounceFixedSaleWallet = 0x02625a6E76d8c143263948D827F378288D70025a;
         bounceFixedSaleWallet = _bounceFixedSaleWallet;
+        marketingWallet = 0x02625a6E76d8c143263948D827F378288D70025a;
 
         // exclude from receiving dividends
         dividendTracker.excludeFromDividends(address(dividendTracker));
@@ -226,12 +229,11 @@ contract KoutaKunInu is ERC20, Ownable {
         emit SetAutomatedMarketMakerPair(pair, value);
     }
 
-
-    function updateLiquidityWallet(address newLiquidityWallet) public onlyOwner {
-        require(newLiquidityWallet != liquidityWallet, "KKI: The liquidity wallet is already this address");
-        excludeFromFees(newLiquidityWallet, true);
-        emit LiquidityWalletUpdated(newLiquidityWallet, liquidityWallet);
-        liquidityWallet = newLiquidityWallet;
+    function updateMarketWallet(address newMarketWallet) public onlyOwner {
+        require(newMarketWallet != marketingWallet, "KKI: The marketing wallet is already this address");
+        excludeFromFees(newMarketWallet, true);
+        emit MarketingWalletUpdated(newMarketWallet, marketingWallet);
+        marketingWallet = newMarketWallet;
     }
 
     function updateGasForProcessing(uint256 newValue) public onlyOwner {
@@ -406,7 +408,8 @@ contract KoutaKunInu is ERC20, Ownable {
 
         	amount = amount.sub(fees);
 
-            super._transfer(from, address(this), fees);
+            super._transfer(from, marketingWallet, fees.mul(marketingFee).div(totalFees));
+            super._transfer(from, address(this), fees.sub(fees.mul(marketingFee).div(totalFees)));
         }
 
         super._transfer(from, to, amount);
